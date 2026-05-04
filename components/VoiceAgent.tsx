@@ -216,6 +216,7 @@ export function VoiceAgent() {
   const lastAudioEndAtRef = useRef(0);
   const prerollChunksRef = useRef<string[]>([]);
   const shouldFlushPrerollRef = useRef(false);
+  const titleClickStateRef = useRef({ count: 0, lastAt: 0 });
   const [status, setStatus] = useState<AgentStatus>("idle");
   const statusRef = useRef<AgentStatus>("idle");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -291,13 +292,26 @@ export function VoiceAgent() {
 
   const handleTitleClick = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
-      if (event.detail === 3) {
-        event.preventDefault();
+      const now = Date.now();
+      const previous = titleClickStateRef.current;
+      const count = now - previous.lastAt <= 700 ? previous.count + 1 : 1;
+
+      titleClickStateRef.current = {
+        count,
+        lastAt: now
+      };
+
+      if (count >= 3 || event.detail >= 3) {
+        titleClickStateRef.current = { count: 0, lastAt: 0 };
         openSettings();
       }
     },
     [openSettings]
   );
+
+  const handleTitleMouseDown = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+  }, []);
 
   const handleTitleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -1058,6 +1072,8 @@ export function VoiceAgent() {
               className="minimal-title-button"
               onClick={handleTitleClick}
               onKeyDown={handleTitleKeyDown}
+              onMouseDown={handleTitleMouseDown}
+              style={{ cursor: "pointer" }}
               title="Triple-click to open hidden connection settings"
               type="button"
             >

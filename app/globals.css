@@ -102,7 +102,9 @@ button {
 
 .minimal-title {
   margin: 0;
-  cursor: pointer;
+  cursor: pointer !important;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .minimal-title-button {
@@ -126,9 +128,10 @@ button {
   color: transparent;
   text-shadow: 0 10px 34px rgba(78, 214, 194, 0.12);
   position: relative;
-  cursor: pointer;
+  cursor: pointer !important;
   border-radius: 20px;
   user-select: none;
+  -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   transition:
@@ -136,6 +139,15 @@ button {
     text-shadow 180ms ease,
     background 180ms ease,
     box-shadow 180ms ease;
+}
+
+.minimal-title-button * {
+  cursor: pointer !important;
+}
+
+.minimal-title-button::selection,
+.minimal-title::selection {
+  background: transparent;
 }
 
 .minimal-title-button::after {
