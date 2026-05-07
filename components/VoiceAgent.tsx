@@ -10,7 +10,7 @@ import { ActionStatus, type ActionToast, getToolLabel } from "./ActionStatus";
 const USER_SPEECH_LEVEL_THRESHOLD = 0.005;
 const TOAST_LIFETIME_MS = 6000;
 const SPEECH_VISUAL_LEVEL_DIVISOR = 0.07;
-const ASSISTANT_AUDIO_STALL_MS = 2500;
+const ASSISTANT_SIGNAL_STALL_MS = 5000;
 const MAX_USER_TALK_MS = 10_000;
 const HOLD_TAIL_MS = 450;
 const SPEECH_END_GRACE_MS = 700;
@@ -116,7 +116,7 @@ function getStageCopy({
     };
   }
 
-  if (isAssistantSpeaking) {
+  if (isAssistantSpeaking || status === "speaking") {
     return {
       tone: "speaking",
       badge: "HCI speaking",
@@ -204,6 +204,7 @@ export function VoiceAgent() {
   const lastSpeechAtRef = useRef(0);
   const assistantSpeechStartedAtRef = useRef(0);
   const lastAssistantAudioAtRef = useRef(0);
+  const lastAssistantSignalAtRef = useRef(0);
   const assistantAudioEndedRef = useRef(false);
   const awaitingGreetingRef = useRef(false);
   const toastTimersRef = useRef<number[]>([]);
@@ -609,11 +610,16 @@ export function VoiceAgent() {
 
           if (
             event.status === "thinking" ||
+            event.status === "speaking" ||
             event.status === "calling_api" ||
             event.status === "waiting_for_confirmation"
           ) {
             setRecordingState(false);
             void closeUserAudioTurn();
+          }
+
+          if (event.status === "speaking") {
+            lastAssistantSignalAtRef.current = Date.now();
           }
 
           if (event.status === "done" && awaitingGreetingRef.current && !assistantSpeakingRef.current) {
@@ -627,6 +633,9 @@ export function VoiceAgent() {
             setAssistantSpeakingState(false);
             setAwaitingGreetingState(false);
             assistantSpeechStartedAtRef.current = 0;
+            lastAssistantAudioAtRef.current = 0;
+            lastAssistantSignalAtRef.current = 0;
+            playerRef.current.interrupt();
             void shutdownMicrophone();
           }
 
@@ -656,6 +665,7 @@ export function VoiceAgent() {
           );
           break;
         case "assistant_text":
+          lastAssistantSignalAtRef.current = Date.now();
           setMessages((current) =>
             upsertConversationMessage(current, "assistant", event.text, event.isPartial ?? false)
           );
@@ -666,6 +676,7 @@ export function VoiceAgent() {
           }
 
           lastAssistantAudioAtRef.current = Date.now();
+          lastAssistantSignalAtRef.current = lastAssistantAudioAtRef.current;
           assistantAudioEndedRef.current = false;
           setAssistantSpeakingState(true);
           // End any ongoing user audio turn before assistant playback.
@@ -674,9 +685,14 @@ export function VoiceAgent() {
           void playerRef.current.playBase64Pcm(event.data);
           break;
         case "assistant_audio_end":
-          // Mark stream completion, but let the buffered PCM finish naturally.
-          // Force-stopping here can clip the last words of long sentences.
           assistantAudioEndedRef.current = true;
+          if (event.reason !== "completed") {
+            setAssistantSpeakingState(false);
+            assistantSpeechStartedAtRef.current = 0;
+            lastAssistantAudioAtRef.current = 0;
+            lastAssistantSignalAtRef.current = 0;
+            playerRef.current.interrupt();
+          }
           break;
         case "tool_call":
           setCurrentAction({
@@ -755,6 +771,7 @@ export function VoiceAgent() {
       setAwaitingGreetingState(false);
       assistantSpeechStartedAtRef.current = 0;
       lastAssistantAudioAtRef.current = 0;
+      lastAssistantSignalAtRef.current = 0;
       void shutdownMicrophone();
       void playerRef.current.stop();
 
@@ -830,6 +847,7 @@ export function VoiceAgent() {
     setCurrentAction(undefined);
     assistantSpeechStartedAtRef.current = 0;
     lastAssistantAudioAtRef.current = 0;
+    lastAssistantSignalAtRef.current = 0;
     assistantAudioEndedRef.current = false;
     audioStreamOpenRef.current = false;
     await shutdownMicrophone();
@@ -911,6 +929,7 @@ export function VoiceAgent() {
       setAssistantSpeakingState(false);
       assistantSpeechStartedAtRef.current = 0;
       lastAssistantAudioAtRef.current = 0;
+      lastAssistantSignalAtRef.current = 0;
 
       if (awaitingGreetingRef.current) {
         activateConversationMode();
@@ -943,6 +962,7 @@ export function VoiceAgent() {
       setAssistantSpeakingState(false);
       assistantSpeechStartedAtRef.current = 0;
       lastAssistantAudioAtRef.current = 0;
+      lastAssistantSignalAtRef.current = 0;
       assistantAudioEndedRef.current = false;
       socketRef.current?.close();
       socketRef.current = undefined;
@@ -964,12 +984,12 @@ export function VoiceAgent() {
         return;
       }
 
-      const lastChunkAt = lastAssistantAudioAtRef.current;
-      if (!lastChunkAt) {
+      const lastSignalAt = lastAssistantSignalAtRef.current;
+      if (!lastSignalAt) {
         return;
       }
 
-      if (Date.now() - lastChunkAt < ASSISTANT_AUDIO_STALL_MS) {
+      if (Date.now() - lastSignalAt < ASSISTANT_SIGNAL_STALL_MS) {
         return;
       }
 
@@ -979,6 +999,7 @@ export function VoiceAgent() {
       setAssistantSpeakingState(false);
       assistantSpeechStartedAtRef.current = 0;
       lastAssistantAudioAtRef.current = 0;
+      lastAssistantSignalAtRef.current = 0;
 
       if (!isHoldingRef.current) {
         setStatus((current) =>
@@ -1106,7 +1127,7 @@ export function VoiceAgent() {
                   ) : (
                     <div className="orb-live-copy">
                       <div className="orb-icon-wrap">
-                        {assistantSpeaking ? <Volume2 size={36} /> : isHolding ? <Waves size={36} /> : <Sparkles size={36} />}
+                        {assistantSpeaking || status === "speaking" ? <Volume2 size={36} /> : isHolding ? <Waves size={36} /> : <Sparkles size={36} />}
                       </div>
                       <span className="orb-badge">{stageCopy.badge}</span>
                       <strong className="orb-title">{stageCopy.title}</strong>

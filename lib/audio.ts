@@ -252,6 +252,7 @@ export class PcmPlayer {
   private nextStartAt = 0;
   private idleTimer?: number;
   private onIdle?: () => void;
+  private activeSources = new Set<AudioBufferSourceNode>();
 
   setOnIdle(onIdle?: () => void) {
     this.onIdle = onIdle;
@@ -280,6 +281,11 @@ export class PcmPlayer {
     const source = context.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(context.destination);
+    this.activeSources.add(source);
+    source.onended = () => {
+      this.activeSources.delete(source);
+      source.disconnect();
+    };
 
     const startAt = Math.max(context.currentTime + 0.02, this.nextStartAt);
     source.start(startAt);
@@ -287,12 +293,29 @@ export class PcmPlayer {
     this.scheduleIdleCallback(context);
   }
 
-  async stop() {
+  interrupt() {
     if (this.idleTimer) {
       window.clearTimeout(this.idleTimer);
       this.idleTimer = undefined;
     }
+
     this.nextStartAt = 0;
+
+    for (const source of this.activeSources) {
+      try {
+        source.stop();
+      } catch {
+        // Source may already be ended by the time we interrupt.
+      }
+
+      source.disconnect();
+    }
+
+    this.activeSources.clear();
+  }
+
+  async stop() {
+    this.interrupt();
     if (this.context && this.context.state !== "closed") {
       await this.context.close().catch(() => undefined);
     }

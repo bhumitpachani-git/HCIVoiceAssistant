@@ -33,7 +33,13 @@ export const toolLabels: Record<string, string> = {
   publish_kuzzle_event: "Publish Kuzzle Event",
   set_theme_mode: "Set Theme / Mode",
   list_hci_devices: "List HCI Devices",
-  start_hci_meeting: "Start HCI Meeting"
+  start_hci_meeting: "Start HCI Meeting",
+  set_transport_rounding: "Set Transport Rounding",
+  set_evs_rounding: "Set EVS Rounding",
+  set_maintenance_rounding: "Set Maintenance Rounding",
+  set_reassess_rounding: "Set Reassess Rounding",
+  set_next_round_timing: "Set Next Round Timing",
+  set_rounding_event: "Set Rounding Event"
 };
 
 function formatValue(value: unknown) {
