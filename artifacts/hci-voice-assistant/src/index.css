@@ -18,8 +18,8 @@
   --danger: #ff7586;
   --shadow-xl: 0 42px 100px rgba(0, 0, 0, 0.48);
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.36);
-  --page-font: "Exo 2", "Inter", "Segoe UI", sans-serif;
-  --display-font: "Exo 2", "Inter", "Segoe UI", sans-serif;
+  --page-font: "Inter", "Raleway", "Segoe UI", sans-serif;
+  --display-font: "Raleway", "Inter", "Segoe UI", sans-serif;
 }
 
 * {
@@ -154,11 +154,11 @@ input {
   border: 0;
   padding: 0 16px 10px;
   background: transparent;
-  color: rgba(234, 244, 255, 0.94);
+  color: rgba(210, 230, 255, 0.88);
   font-family: var(--display-font);
-  font-size: clamp(1.1rem, 1.6vw, 1.6rem);
-  font-weight: 300;
-  letter-spacing: 0.22em;
+  font-size: clamp(0.95rem, 1.4vw, 1.35rem);
+  font-weight: 200;
+  letter-spacing: 0.32em;
   text-transform: none;
   cursor: pointer;
   user-select: none;
@@ -412,13 +412,13 @@ input {
 
 .voice-console-title {
   margin: 0;
-  font-family: var(--display-font);
-  font-size: clamp(1.6rem, 3vw, 2.4rem);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: #f5f8ff;
-  text-shadow: 0 8px 30px rgba(0, 0, 0, 0.44);
-  line-height: 1.1;
+  font-family: var(--page-font);
+  font-size: clamp(1rem, 2vw, 1.5rem);
+  font-weight: 400;
+  letter-spacing: 0em;
+  color: rgba(235, 245, 255, 0.95);
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.36);
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -455,9 +455,10 @@ input {
   left: 50%;
   width: 100%;
   transform: translate(-50%, -50%);
-  font-size: clamp(1.6rem, 4vw, 2.2rem);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: clamp(0.95rem, 2vw, 1.25rem);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: rgba(220, 235, 255, 0.9);
 }
 
 .voice-console-active {
