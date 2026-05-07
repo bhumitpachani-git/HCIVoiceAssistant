@@ -1119,7 +1119,7 @@ export function VoiceAgent() {
                       type="button"
                     >
                       <span className="voice-console-icon">
-                        <StartIcon size={44} strokeWidth={1.8} />
+                        <StartIcon size={32} strokeWidth={1.4} />
                       </span>
                       <strong className="voice-console-title">{startButtonLabel}</strong>
                     </button>
@@ -1127,11 +1127,11 @@ export function VoiceAgent() {
                     <div className="voice-console-live voice-console-active">
                       <div className="voice-console-icon">
                         {assistantSpeaking || status === "speaking" ? (
-                          <Volume2 size={42} strokeWidth={1.8} />
+                          <Volume2 size={34} strokeWidth={1.4} />
                         ) : isHolding ? (
-                          <Waves size={42} strokeWidth={1.8} />
+                          <Waves size={34} strokeWidth={1.4} />
                         ) : (
-                          <Sparkles size={42} strokeWidth={1.8} />
+                          <Sparkles size={34} strokeWidth={1.4} />
                         )}
                       </div>
                       <strong className="voice-console-title">{stageCopy.title}</strong>
