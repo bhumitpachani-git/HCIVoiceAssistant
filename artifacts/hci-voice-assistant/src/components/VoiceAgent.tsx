@@ -1121,7 +1121,7 @@ export function VoiceAgent() {
                       <span className="voice-console-icon">
                         <StartIcon size={32} strokeWidth={1.4} />
                       </span>
-                      <span className="voice-console-title">{startButtonLabel}</span>
+                      <strong className="voice-console-title">{startButtonLabel}</strong>
                     </button>
                   ) : (
                     <div className="voice-console-live voice-console-active">
@@ -1134,7 +1134,7 @@ export function VoiceAgent() {
                           <Sparkles size={34} strokeWidth={1.4} />
                         )}
                       </div>
-                      <span className="voice-console-title">{stageCopy.title}</span>
+                      <strong className="voice-console-title">{stageCopy.title}</strong>
                       <div className="voice-console-meter" aria-hidden="true">
                         <span />
                         <span />
