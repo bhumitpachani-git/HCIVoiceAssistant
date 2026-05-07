@@ -27,8 +27,11 @@ export function ConversationPanel({ messages }: ConversationPanelProps) {
 
       {messages.length === 0 ? (
         <div className="empty-state">
-          <p>Start the session, turn on the mic, and talk naturally.</p>
-          <p>You can say things like “smart admit the patient”, “turn on the water call”, or “start the meeting on the whiteboard”.</p>
+          <p>Start the session and talk naturally.</p>
+          <p>
+            You can say things like <code>smart admit the patient</code>, <code>turn on the water call</code>, or
+            <code>start the meeting on the whiteboard</code>.
+          </p>
         </div>
       ) : (
         <div className="message-list" ref={listRef}>

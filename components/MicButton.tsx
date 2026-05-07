@@ -17,7 +17,7 @@ export function MicButton({ active, recording, assistantSpeaking, disabled, onTo
     : recording
       ? "Listening"
       : assistantSpeaking
-        ? "Speak Now"
+        ? "Assistant Speaking"
         : "Mic Ready";
 
   return (

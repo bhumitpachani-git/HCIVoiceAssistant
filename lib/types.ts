@@ -3,6 +3,7 @@ export type AgentStatus =
   | "connecting"
   | "listening"
   | "thinking"
+  | "speaking"
   | "calling_api"
   | "waiting_for_confirmation"
   | "done"
@@ -39,7 +40,7 @@ export type ServerEvent =
   | { type: "transcript"; role: "user" | "assistant"; text: string; isPartial?: boolean }
   | { type: "assistant_text"; text: string; isPartial?: boolean }
   | { type: "assistant_audio"; data: string }
-  | { type: "assistant_audio_end"; reason: "interrupted" | "session_closed" }
+  | { type: "assistant_audio_end"; reason: "interrupted" | "session_closed" | "completed" }
   | { type: "tool_call"; name: string; args: Record<string, unknown>; confirmationId?: string }
   | { type: "tool_result"; name: string; result: ActionResult; confirmationId?: string }
   | { type: "error"; message: string; code?: string };

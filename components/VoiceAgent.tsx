@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { Sparkles, Square, Volume2, Waves, Wifi } from "lucide-react";
+import { Mic, Sparkles, Square, Volume2, Waves, Wifi } from "lucide-react";
 import { MicrophoneStreamer, PcmPlayer } from "@/lib/audio";
 import { AgentSocket, clearStoredWsUrl, getStoredWsUrl, resolveWsUrl, setStoredWsUrl } from "@/lib/websocket";
 import type { AgentStatus, ConversationMessage, CurrentAction, ServerEvent } from "@/lib/types";
@@ -10,7 +10,7 @@ import { ActionStatus, type ActionToast, getToolLabel } from "./ActionStatus";
 const USER_SPEECH_LEVEL_THRESHOLD = 0.005;
 const TOAST_LIFETIME_MS = 6000;
 const SPEECH_VISUAL_LEVEL_DIVISOR = 0.07;
-const ASSISTANT_AUDIO_STALL_MS = 2500;
+const ASSISTANT_SIGNAL_STALL_MS = 5000;
 const MAX_USER_TALK_MS = 10_000;
 const HOLD_TAIL_MS = 450;
 const SPEECH_END_GRACE_MS = 700;
@@ -116,7 +116,7 @@ function getStageCopy({
     };
   }
 
-  if (isAssistantSpeaking) {
+  if (isAssistantSpeaking || status === "speaking") {
     return {
       tone: "speaking",
       badge: "HCI speaking",
@@ -150,7 +150,7 @@ function getStageCopy({
       tone: "listening",
       badge: "Listening",
       title: "Listening",
-      detail: "Go ahead—I'm listening."
+      detail: "Go ahead. I'm listening."
     };
   }
 
@@ -159,7 +159,7 @@ function getStageCopy({
       tone: "thinking",
       badge: "Working",
       title: "Updating room",
-      detail: "One moment—updating the room now."
+      detail: "One moment. Updating the room now."
     };
   }
 
@@ -204,6 +204,7 @@ export function VoiceAgent() {
   const lastSpeechAtRef = useRef(0);
   const assistantSpeechStartedAtRef = useRef(0);
   const lastAssistantAudioAtRef = useRef(0);
+  const lastAssistantSignalAtRef = useRef(0);
   const assistantAudioEndedRef = useRef(false);
   const awaitingGreetingRef = useRef(false);
   const toastTimersRef = useRef<number[]>([]);
@@ -609,11 +610,16 @@ export function VoiceAgent() {
 
           if (
             event.status === "thinking" ||
+            event.status === "speaking" ||
             event.status === "calling_api" ||
             event.status === "waiting_for_confirmation"
           ) {
             setRecordingState(false);
             void closeUserAudioTurn();
+          }
+
+          if (event.status === "speaking") {
+            lastAssistantSignalAtRef.current = Date.now();
           }
 
           if (event.status === "done" && awaitingGreetingRef.current && !assistantSpeakingRef.current) {
@@ -627,6 +633,8 @@ export function VoiceAgent() {
             setAssistantSpeakingState(false);
             setAwaitingGreetingState(false);
             assistantSpeechStartedAtRef.current = 0;
+            lastAssistantAudioAtRef.current = 0;
+            lastAssistantSignalAtRef.current = 0;
             void shutdownMicrophone();
           }
 
@@ -656,6 +664,7 @@ export function VoiceAgent() {
           );
           break;
         case "assistant_text":
+          lastAssistantSignalAtRef.current = Date.now();
           setMessages((current) =>
             upsertConversationMessage(current, "assistant", event.text, event.isPartial ?? false)
           );
@@ -666,6 +675,7 @@ export function VoiceAgent() {
           }
 
           lastAssistantAudioAtRef.current = Date.now();
+          lastAssistantSignalAtRef.current = lastAssistantAudioAtRef.current;
           assistantAudioEndedRef.current = false;
           setAssistantSpeakingState(true);
           // End any ongoing user audio turn before assistant playback.
@@ -674,9 +684,14 @@ export function VoiceAgent() {
           void playerRef.current.playBase64Pcm(event.data);
           break;
         case "assistant_audio_end":
-          // Mark stream completion, but let the buffered PCM finish naturally.
-          // Force-stopping here can clip the last words of long sentences.
           assistantAudioEndedRef.current = true;
+          if (event.reason !== "completed") {
+            setAssistantSpeakingState(false);
+            assistantSpeechStartedAtRef.current = 0;
+            lastAssistantAudioAtRef.current = 0;
+            lastAssistantSignalAtRef.current = 0;
+            playerRef.current.interrupt();
+          }
           break;
         case "tool_call":
           setCurrentAction({
@@ -755,6 +770,7 @@ export function VoiceAgent() {
       setAwaitingGreetingState(false);
       assistantSpeechStartedAtRef.current = 0;
       lastAssistantAudioAtRef.current = 0;
+      lastAssistantSignalAtRef.current = 0;
       void shutdownMicrophone();
       void playerRef.current.stop();
 
@@ -830,6 +846,7 @@ export function VoiceAgent() {
     setCurrentAction(undefined);
     assistantSpeechStartedAtRef.current = 0;
     lastAssistantAudioAtRef.current = 0;
+    lastAssistantSignalAtRef.current = 0;
     assistantAudioEndedRef.current = false;
     audioStreamOpenRef.current = false;
     await shutdownMicrophone();
@@ -911,6 +928,7 @@ export function VoiceAgent() {
       setAssistantSpeakingState(false);
       assistantSpeechStartedAtRef.current = 0;
       lastAssistantAudioAtRef.current = 0;
+      lastAssistantSignalAtRef.current = 0;
 
       if (awaitingGreetingRef.current) {
         activateConversationMode();
@@ -943,6 +961,7 @@ export function VoiceAgent() {
       setAssistantSpeakingState(false);
       assistantSpeechStartedAtRef.current = 0;
       lastAssistantAudioAtRef.current = 0;
+      lastAssistantSignalAtRef.current = 0;
       assistantAudioEndedRef.current = false;
       socketRef.current?.close();
       socketRef.current = undefined;
@@ -964,12 +983,12 @@ export function VoiceAgent() {
         return;
       }
 
-      const lastChunkAt = lastAssistantAudioAtRef.current;
-      if (!lastChunkAt) {
+      const lastSignalAt = lastAssistantSignalAtRef.current;
+      if (!lastSignalAt) {
         return;
       }
 
-      if (Date.now() - lastChunkAt < ASSISTANT_AUDIO_STALL_MS) {
+      if (Date.now() - lastSignalAt < ASSISTANT_SIGNAL_STALL_MS) {
         return;
       }
 
@@ -979,6 +998,7 @@ export function VoiceAgent() {
       setAssistantSpeakingState(false);
       assistantSpeechStartedAtRef.current = 0;
       lastAssistantAudioAtRef.current = 0;
+      lastAssistantSignalAtRef.current = 0;
 
       if (!isHoldingRef.current) {
         setStatus((current) =>
@@ -1003,8 +1023,10 @@ export function VoiceAgent() {
   });
   const orbStyle = { "--voice-level": "0" } as CSSProperties;
   const startDisabled = status === "connecting";
-  const startButtonLabel = error ? "Reconnect" : startDisabled ? "Connecting…" : "Start voice";
+  const startButtonLabel = error ? "Reconnect" : startDisabled ? "Connecting" : "Start";
   const showEndSession = connected || status === "connecting";
+  const footerCopy = connected ? stageCopy.detail : error ? "Tap to reconnect" : "Tap to speak";
+  const StartIcon = error ? Wifi : startDisabled ? Waves : Mic;
 
   return (
     <main className={`experience-shell ${stageCopy.tone}`}>
@@ -1064,12 +1086,12 @@ export function VoiceAgent() {
         </div>
       ) : null}
 
-      <section className="voice-stage minimal-stage">
-        <header className="minimal-header">
-          <h1 className="minimal-title">
+      <section className="voice-stage reference-stage">
+        <header className="reference-header">
+          <h1 className="reference-title">
             <button
               aria-label="HCI Voice Assistant"
-              className="minimal-title-button"
+              className="reference-title-button"
               onClick={handleTitleClick}
               onKeyDown={handleTitleKeyDown}
               onMouseDown={handleTitleMouseDown}
@@ -1082,46 +1104,40 @@ export function VoiceAgent() {
           </h1>
         </header>
 
-        <div className="hero-panel minimal-hero">
-          <div className="orb-stage-shell">
-            <div className={`orb-stage ${stageCopy.tone}`} ref={orbStageRef} style={orbStyle}>
-              <div className="orb-node orb-node-a" />
-              <div className="orb-node orb-node-b" />
-              <div className="orb-node orb-node-c" />
-              <div className="orb-node orb-node-d" />
-              <div className="orb-halo orb-halo-one" />
-              <div className="orb-halo orb-halo-two" />
-              <div className="orb-core">
-                <div className="orb-center" aria-live="polite">
+        <div className="reference-hero">
+          <div className="voice-console-shell">
+            <div className={`voice-console ${stageCopy.tone}`} ref={orbStageRef} style={orbStyle}>
+              <div className="voice-console-shadow" />
+              <div className="voice-console-ring voice-console-ring-ticks" />
+              <div className="voice-console-ring voice-console-ring-outer" />
+              <div className="voice-console-ring voice-console-ring-mid" />
+              <div className="voice-console-core" aria-live="polite">
+                <div className="voice-console-inner">
                   {!connected ? (
                     <button
-                      className="orb-start-button"
+                      className="voice-console-button voice-console-start"
                       disabled={startDisabled}
                       onClick={() => void startSession()}
                       type="button"
                     >
-                      <Wifi size={26} />
-                      <span className="orb-start-label">{startButtonLabel}</span>
+                      <span className="voice-console-icon">
+                        <StartIcon size={44} strokeWidth={1.8} />
+                      </span>
+                      <strong className="voice-console-title">{startButtonLabel}</strong>
                     </button>
                   ) : (
-                    <div className="orb-live-copy">
-                      <div className="orb-icon-wrap">
-                        {assistantSpeaking ? <Volume2 size={36} /> : isHolding ? <Waves size={36} /> : <Sparkles size={36} />}
+                    <div className="voice-console-live voice-console-active">
+                      <div className="voice-console-icon">
+                        {assistantSpeaking || status === "speaking" ? (
+                          <Volume2 size={42} strokeWidth={1.8} />
+                        ) : isHolding ? (
+                          <Waves size={42} strokeWidth={1.8} />
+                        ) : (
+                          <Sparkles size={42} strokeWidth={1.8} />
+                        )}
                       </div>
-                      <span className="orb-badge">{stageCopy.badge}</span>
-                      <strong className="orb-title">{stageCopy.title}</strong>
-                      <p className="orb-detail">
-                        {stageCopy.detail}
-                        {status === "calling_api" ? (
-                          <span className="thinking-dots" aria-hidden="true">
-                            <span className="dot" />
-                            <span className="dot" />
-                            <span className="dot" />
-                          </span>
-                        ) : null}
-                      </p>
-                      <div className="orb-meter" aria-hidden="true">
-                        <span />
+                      <strong className="voice-console-title">{stageCopy.title}</strong>
+                      <div className="voice-console-meter" aria-hidden="true">
                         <span />
                         <span />
                         <span />
@@ -1133,11 +1149,21 @@ export function VoiceAgent() {
                 </div>
               </div>
             </div>
+            <p className="voice-console-footer">
+              {footerCopy}
+              {status === "calling_api" ? (
+                <span className="thinking-dots" aria-hidden="true">
+                  <span className="dot" />
+                  <span className="dot" />
+                  <span className="dot" />
+                </span>
+              ) : null}
+            </p>
           </div>
         </div>
 
         {showEndSession ? (
-          <footer className="minimal-footer">
+          <footer className="reference-footer">
             <button className="session-end-button" onClick={() => void stopSession()} type="button">
               <Square size={18} />
               End Session
@@ -1148,3 +1174,4 @@ export function VoiceAgent() {
     </main>
   );
 }
+

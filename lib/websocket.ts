@@ -3,12 +3,21 @@ import type { ClientEvent, ServerEvent } from "./types";
 type EventHandler = (event: ServerEvent) => void;
 type CloseHandler = () => void;
 
-const FALLBACK_WS_URL = "wss://obligate-factoid-gauntlet.ngrok-free.dev/ws";
+const LOCAL_FALLBACK_WS_URL = "ws://localhost:4000/ws";
 
 export const WS_URL_STORAGE_KEY = "voice-agent.ws-url";
 
 export function defaultWsUrl() {
-  return FALLBACK_WS_URL;
+  return browserDefaultWsUrl() ?? LOCAL_FALLBACK_WS_URL;
+}
+
+function browserDefaultWsUrl() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/ws`;
 }
 
 function getBrowserStorage() {
@@ -38,7 +47,16 @@ export function normalizeWsUrl(value: string) {
     return `ws://${trimmed.slice("http://".length)}`;
   }
 
-  return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+      return "";
+    }
+
+    return parsed.toString();
+  } catch {
+    return "";
+  }
 }
 
 export function getStoredWsUrl(storage = getBrowserStorage()) {
@@ -64,9 +82,9 @@ export function clearStoredWsUrl(storage = getBrowserStorage()) {
 }
 
 export function resolveWsUrl() {
-  const envUrl = process.env.NEXT_PUBLIC_BACKEND_WS_URL;
+  const envUrl = normalizeWsUrl(process.env.NEXT_PUBLIC_BACKEND_WS_URL ?? "");
 
-  return getStoredWsUrl() ?? (envUrl ? normalizeWsUrl(envUrl) : undefined) ?? defaultWsUrl();
+  return getStoredWsUrl() ?? envUrl ?? defaultWsUrl();
 }
 
 export class AgentSocket {
