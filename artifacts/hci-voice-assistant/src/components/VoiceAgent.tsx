@@ -1021,7 +1021,7 @@ export function VoiceAgent() {
   });
   const orbStyle = { "--voice-level": "0" } as CSSProperties;
   const startDisabled = status === "connecting";
-  const startButtonLabel = error ? "Reconnect" : startDisabled ? "Connecting" : "Start";
+  const startButtonLabel = error ? "Reconnect" : startDisabled ? "Connecting" : "Start voice";
   const showEndSession = connected || status === "connecting";
   const footerCopy = connected ? stageCopy.detail : error ? "Tap to reconnect" : "Tap to speak";
   const StartIcon = error ? Wifi : startDisabled ? Waves : Mic;
