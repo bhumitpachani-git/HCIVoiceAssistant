@@ -84,11 +84,12 @@ export function clearStoredWsUrl(storage = getBrowserStorage()) {
 export function resolveWsUrl() {
   const envUrl = normalizeWsUrl(process.env.NEXT_PUBLIC_BACKEND_WS_URL ?? "");
 
-  return getStoredWsUrl() ?? envUrl ?? defaultWsUrl();
+  return getStoredWsUrl() || envUrl || defaultWsUrl();
 }
 
 export class AgentSocket {
   private socket?: WebSocket;
+  private connectionGeneration = 0;
 
   constructor(
     private readonly onEvent: EventHandler,
@@ -100,14 +101,24 @@ export class AgentSocket {
 
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(url);
+      const generation = ++this.connectionGeneration;
       let settled = false;
       this.socket = socket;
 
       socket.onopen = () => {
+        if (this.connectionGeneration !== generation || this.socket !== socket) {
+          socket.close();
+          return;
+        }
+
         settled = true;
         resolve();
       };
       socket.onerror = () => {
+        if (this.connectionGeneration !== generation || this.socket !== socket) {
+          return;
+        }
+
         if (!settled) {
           settled = true;
           reject(new Error("Could not connect to voice backend."));
@@ -117,6 +128,10 @@ export class AgentSocket {
         this.onEvent({ type: "error", message: "Voice backend connection error." });
       };
       socket.onclose = () => {
+        if (this.connectionGeneration !== generation) {
+          return;
+        }
+
         if (!settled) {
           settled = true;
           reject(new Error("Voice backend closed the connection before the session started."));
@@ -124,6 +139,10 @@ export class AgentSocket {
         this.onClose();
       };
       socket.onmessage = (message) => {
+        if (this.connectionGeneration !== generation || this.socket !== socket) {
+          return;
+        }
+
         try {
           this.onEvent(JSON.parse(message.data) as ServerEvent);
         } catch {
@@ -140,8 +159,10 @@ export class AgentSocket {
   }
 
   close() {
-    this.socket?.close();
+    const socket = this.socket;
+    this.connectionGeneration += 1;
     this.socket = undefined;
+    socket?.close();
   }
 
   get isOpen() {

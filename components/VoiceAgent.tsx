@@ -116,7 +116,7 @@ function getStageCopy({
     };
   }
 
-  if (isAssistantSpeaking || status === "speaking") {
+  if (isAssistantSpeaking) {
     return {
       tone: "speaking",
       badge: "HCI speaking",
@@ -150,7 +150,7 @@ function getStageCopy({
       tone: "listening",
       badge: "Listening",
       title: "Listening",
-      detail: "Go ahead—I'm listening."
+      detail: "Go ahead, I'm listening."
     };
   }
 
@@ -159,7 +159,7 @@ function getStageCopy({
       tone: "thinking",
       badge: "Working",
       title: "Updating room",
-      detail: "One moment—updating the room now."
+      detail: "One moment, updating the room now."
     };
   }
 
@@ -207,6 +207,8 @@ export function VoiceAgent() {
   const lastAssistantSignalAtRef = useRef(0);
   const assistantAudioEndedRef = useRef(false);
   const awaitingGreetingRef = useRef(false);
+  const serverSessionIdRef = useRef<string | undefined>(undefined);
+  const latestReplyIdRef = useRef(0);
   const toastTimersRef = useRef<number[]>([]);
   const visualLevelTargetRef = useRef(0);
   const visualLevelCurrentRef = useRef(0);
@@ -256,6 +258,11 @@ export function VoiceAgent() {
   const setAwaitingGreetingState = useCallback((next: boolean) => {
     awaitingGreetingRef.current = next;
     setAwaitingGreeting(next);
+  }, []);
+
+  const resetServerEventIdentity = useCallback(() => {
+    serverSessionIdRef.current = undefined;
+    latestReplyIdRef.current = 0;
   }, []);
 
   const openSettings = useCallback(() => {
@@ -410,6 +417,8 @@ export function VoiceAgent() {
     } finally {
       audioStreamOpenRef.current = false;
       lastAudioEndAtRef.current = Date.now();
+      prerollChunksRef.current = [];
+      shouldFlushPrerollRef.current = false;
       closingAudioTurnRef.current = false;
     }
   }, []);
@@ -430,6 +439,63 @@ export function VoiceAgent() {
       setStatus("listening");
     }
   }, [setAwaitingGreetingState, setConversationEnabledState]);
+
+  const clearAssistantPlaybackState = useCallback(() => {
+    setAssistantSpeakingState(false);
+    assistantSpeechStartedAtRef.current = 0;
+    lastAssistantAudioAtRef.current = 0;
+    lastAssistantSignalAtRef.current = 0;
+  }, [setAssistantSpeakingState]);
+
+  const acceptServerEvent = useCallback((event: ServerEvent) => {
+    if (event.sessionId) {
+      if (!serverSessionIdRef.current) {
+        serverSessionIdRef.current = event.sessionId;
+      } else if (serverSessionIdRef.current !== event.sessionId) {
+        return { accept: false, isNewReply: false };
+      }
+    }
+
+    if (typeof event.replyId !== "number") {
+      return { accept: true, isNewReply: false };
+    }
+
+    if (event.replyId < latestReplyIdRef.current) {
+      return { accept: false, isNewReply: false };
+    }
+
+    const isNewReply = event.replyId > latestReplyIdRef.current;
+    if (isNewReply) {
+      latestReplyIdRef.current = event.replyId;
+    }
+
+    return { accept: true, isNewReply };
+  }, []);
+
+  const settleAssistantTurn = useCallback(() => {
+    clearAssistantPlaybackState();
+
+    if (awaitingGreetingRef.current) {
+      activateConversationMode();
+      return;
+    }
+
+    if (!connectedRef.current || isHoldingRef.current) {
+      return;
+    }
+
+    setStatus((current) =>
+      current === "connecting" ||
+      current === "thinking" ||
+      current === "calling_api" ||
+      current === "waiting_for_confirmation" ||
+      current === "error" ||
+      current === "disconnected" ||
+      current === "stopped"
+        ? current
+        : "listening"
+    );
+  }, [activateConversationMode, clearAssistantPlaybackState]);
 
   const handleMicLevel = useCallback(
     (level: number) => {
@@ -565,6 +631,7 @@ export function VoiceAgent() {
         for (const bufferedChunk of priorPreroll) {
           socket.send({ type: "audio_chunk", data: bufferedChunk });
         }
+        prerollChunksRef.current = [];
       }
 
       socket.send({ type: "audio_chunk", data });
@@ -595,6 +662,17 @@ export function VoiceAgent() {
 
   const handleServerEvent = useCallback(
     (event: ServerEvent) => {
+      const eventIdentity = acceptServerEvent(event);
+      if (!eventIdentity.accept) {
+        return;
+      }
+
+      if (eventIdentity.isNewReply) {
+        assistantAudioEndedRef.current = false;
+        clearAssistantPlaybackState();
+        playerRef.current.interrupt();
+      }
+
       switch (event.type) {
         case "status": {
           const nextStatus =
@@ -618,10 +696,6 @@ export function VoiceAgent() {
             void closeUserAudioTurn();
           }
 
-          if (event.status === "speaking") {
-            lastAssistantSignalAtRef.current = Date.now();
-          }
-
           if (event.status === "done" && awaitingGreetingRef.current && !assistantSpeakingRef.current) {
             activateConversationMode();
           }
@@ -630,11 +704,9 @@ export function VoiceAgent() {
             setConnectedState(false);
             setConversationEnabledState(false);
             setRecordingState(false);
-            setAssistantSpeakingState(false);
+            clearAssistantPlaybackState();
+            resetServerEventIdentity();
             setAwaitingGreetingState(false);
-            assistantSpeechStartedAtRef.current = 0;
-            lastAssistantAudioAtRef.current = 0;
-            lastAssistantSignalAtRef.current = 0;
             playerRef.current.interrupt();
             void shutdownMicrophone();
           }
@@ -665,7 +737,6 @@ export function VoiceAgent() {
           );
           break;
         case "assistant_text":
-          lastAssistantSignalAtRef.current = Date.now();
           setMessages((current) =>
             upsertConversationMessage(current, "assistant", event.text, event.isPartial ?? false)
           );
@@ -687,11 +758,14 @@ export function VoiceAgent() {
         case "assistant_audio_end":
           assistantAudioEndedRef.current = true;
           if (event.reason !== "completed") {
-            setAssistantSpeakingState(false);
-            assistantSpeechStartedAtRef.current = 0;
-            lastAssistantAudioAtRef.current = 0;
-            lastAssistantSignalAtRef.current = 0;
             playerRef.current.interrupt();
+            if (event.reason !== "session_closed") {
+              settleAssistantTurn();
+            } else {
+              clearAssistantPlaybackState();
+            }
+          } else if (!playerRef.current.hasPendingPlayback()) {
+            settleAssistantTurn();
           }
           break;
         case "tool_call":
@@ -725,6 +799,10 @@ export function VoiceAgent() {
           break;
         case "error":
           setAwaitingGreetingState(false);
+          assistantAudioEndedRef.current = true;
+          clearAssistantPlaybackState();
+          playerRef.current.interrupt();
+          void closeUserAudioTurn();
           setError(event.message);
           setStatus("error");
           pushToast({
@@ -738,10 +816,14 @@ export function VoiceAgent() {
       }
     },
     [
+      acceptServerEvent,
       activateConversationMode,
+      clearAssistantPlaybackState,
       closeUserAudioTurn,
       pushVisualLevel,
       pushToast,
+      resetServerEventIdentity,
+      settleAssistantTurn,
       setAssistantSpeakingState,
       setAwaitingGreetingState,
       setConnectedState,
@@ -767,11 +849,9 @@ export function VoiceAgent() {
       setConnectedState(false);
       setConversationEnabledState(false);
       setRecordingState(false);
-      setAssistantSpeakingState(false);
+      clearAssistantPlaybackState();
+      resetServerEventIdentity();
       setAwaitingGreetingState(false);
-      assistantSpeechStartedAtRef.current = 0;
-      lastAssistantAudioAtRef.current = 0;
-      lastAssistantSignalAtRef.current = 0;
       void shutdownMicrophone();
       void playerRef.current.stop();
 
@@ -794,7 +874,8 @@ export function VoiceAgent() {
     }
   }, [
     handleServerEvent,
-    setAssistantSpeakingState,
+    clearAssistantPlaybackState,
+    resetServerEventIdentity,
     setAwaitingGreetingState,
     setConnectedState,
     setConversationEnabledState,
@@ -811,6 +892,7 @@ export function VoiceAgent() {
     setMessages([]);
     setCurrentAction(undefined);
     setError(undefined);
+    resetServerEventIdentity();
     setAwaitingGreetingState(true);
     setConversationEnabledState(false);
     setRecordingState(false);
@@ -831,6 +913,7 @@ export function VoiceAgent() {
     clearToasts,
     connect,
     ensureMicrophoneStarted,
+    resetServerEventIdentity,
     setAwaitingGreetingState,
     setConversationEnabledState,
     setRecordingState,
@@ -843,12 +926,10 @@ export function VoiceAgent() {
     setAwaitingGreetingState(false);
     setConversationEnabledState(false);
     setRecordingState(false);
-    setAssistantSpeakingState(false);
+    clearAssistantPlaybackState();
     setCurrentAction(undefined);
-    assistantSpeechStartedAtRef.current = 0;
-    lastAssistantAudioAtRef.current = 0;
-    lastAssistantSignalAtRef.current = 0;
     assistantAudioEndedRef.current = false;
+    resetServerEventIdentity();
     audioStreamOpenRef.current = false;
     await shutdownMicrophone();
     socketRef.current?.send({ type: "audio_end" });
@@ -859,7 +940,8 @@ export function VoiceAgent() {
     await playerRef.current.stop();
     setStatus("stopped");
   }, [
-    setAssistantSpeakingState,
+    clearAssistantPlaybackState,
+    resetServerEventIdentity,
     setAwaitingGreetingState,
     setConnectedState,
     setConversationEnabledState,
@@ -926,29 +1008,13 @@ export function VoiceAgent() {
         return;
       }
 
-      setAssistantSpeakingState(false);
-      assistantSpeechStartedAtRef.current = 0;
-      lastAssistantAudioAtRef.current = 0;
-      lastAssistantSignalAtRef.current = 0;
-
-      if (awaitingGreetingRef.current) {
-        activateConversationMode();
-        return;
-      }
-
-      if (!connectedRef.current || isHoldingRef.current) {
-        return;
-      }
-
-      setStatus((current) =>
-        current === "error" || current === "disconnected" || current === "stopped" ? current : "listening"
-      );
+      settleAssistantTurn();
     });
 
     return () => {
       player.setOnIdle(undefined);
     };
-  }, [activateConversationMode, setAssistantSpeakingState]);
+  }, [settleAssistantTurn]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -959,11 +1025,9 @@ export function VoiceAgent() {
       setAwaitingGreetingState(false);
       setConversationEnabledState(false);
       setRecordingState(false);
-      setAssistantSpeakingState(false);
-      assistantSpeechStartedAtRef.current = 0;
-      lastAssistantAudioAtRef.current = 0;
-      lastAssistantSignalAtRef.current = 0;
+      clearAssistantPlaybackState();
       assistantAudioEndedRef.current = false;
+      resetServerEventIdentity();
       socketRef.current?.close();
       socketRef.current = undefined;
       void shutdownMicrophone();
@@ -971,7 +1035,8 @@ export function VoiceAgent() {
     };
   }, [
     clearToasts,
-    setAssistantSpeakingState,
+    clearAssistantPlaybackState,
+    resetServerEventIdentity,
     setAwaitingGreetingState,
     setConversationEnabledState,
     setRecordingState,
@@ -993,25 +1058,21 @@ export function VoiceAgent() {
         return;
       }
 
+      if (playerRef.current.hasPendingPlayback()) {
+        return;
+      }
+
       // Self-recovery: if assistant audio stream stalls unexpectedly,
       // unlock mic/listening state so conversation can continue.
       assistantAudioEndedRef.current = true;
-      setAssistantSpeakingState(false);
-      assistantSpeechStartedAtRef.current = 0;
-      lastAssistantAudioAtRef.current = 0;
-      lastAssistantSignalAtRef.current = 0;
-
-      if (!isHoldingRef.current) {
-        setStatus((current) =>
-          current === "error" || current === "disconnected" || current === "stopped" ? current : "listening"
-        );
-      }
+      playerRef.current.interrupt();
+      settleAssistantTurn();
     }, 500);
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [setAssistantSpeakingState]);
+  }, [settleAssistantTurn]);
 
   const stageCopy = getStageCopy({
     status,
@@ -1024,7 +1085,7 @@ export function VoiceAgent() {
   });
   const orbStyle = { "--voice-level": "0" } as CSSProperties;
   const startDisabled = status === "connecting";
-  const startButtonLabel = error ? "Reconnect" : startDisabled ? "Connecting…" : "Start voice";
+  const startButtonLabel = error ? "Reconnect" : startDisabled ? "Connecting..." : "Start voice";
   const showEndSession = connected || status === "connecting";
 
   return (
@@ -1127,7 +1188,7 @@ export function VoiceAgent() {
                   ) : (
                     <div className="orb-live-copy">
                       <div className="orb-icon-wrap">
-                        {assistantSpeaking || status === "speaking" ? <Volume2 size={36} /> : isHolding ? <Waves size={36} /> : <Sparkles size={36} />}
+                        {assistantSpeaking ? <Volume2 size={36} /> : isHolding ? <Waves size={36} /> : <Sparkles size={36} />}
                       </div>
                       <span className="orb-badge">{stageCopy.badge}</span>
                       <strong className="orb-title">{stageCopy.title}</strong>

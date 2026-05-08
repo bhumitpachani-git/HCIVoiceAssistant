@@ -35,15 +35,21 @@ export type ClientEvent =
   | { type: "confirm_action"; confirmationId: string; approved?: boolean }
   | { type: "text_input"; text: string };
 
+export type ServerEventMeta = {
+  sessionId?: string;
+  replyId?: number;
+  turnId?: string;
+};
+
 export type ServerEvent =
-  | { type: "status"; status: AgentStatus; message?: string }
-  | { type: "transcript"; role: "user" | "assistant"; text: string; isPartial?: boolean }
-  | { type: "assistant_text"; text: string; isPartial?: boolean }
-  | { type: "assistant_audio"; data: string }
-  | { type: "assistant_audio_end"; reason: "interrupted" | "session_closed" | "completed" }
-  | { type: "tool_call"; name: string; args: Record<string, unknown>; confirmationId?: string }
-  | { type: "tool_result"; name: string; result: ActionResult; confirmationId?: string }
-  | { type: "error"; message: string; code?: string };
+  | (ServerEventMeta & { type: "status"; status: AgentStatus; message?: string })
+  | (ServerEventMeta & { type: "transcript"; role: "user" | "assistant"; text: string; isPartial?: boolean })
+  | (ServerEventMeta & { type: "assistant_text"; text: string; isPartial?: boolean })
+  | (ServerEventMeta & { type: "assistant_audio"; data: string })
+  | (ServerEventMeta & { type: "assistant_audio_end"; reason: "interrupted" | "session_closed" | "completed" })
+  | (ServerEventMeta & { type: "tool_call"; name: string; args: Record<string, unknown>; confirmationId?: string })
+  | (ServerEventMeta & { type: "tool_result"; name: string; result: ActionResult; confirmationId?: string })
+  | (ServerEventMeta & { type: "error"; message: string; code?: string });
 
 export type CurrentAction = {
   name: string;

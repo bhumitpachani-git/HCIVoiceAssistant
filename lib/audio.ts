@@ -322,6 +322,18 @@ export class PcmPlayer {
     this.context = undefined;
   }
 
+  hasPendingPlayback() {
+    if (this.activeSources.size > 0) {
+      return true;
+    }
+
+    if (!this.context) {
+      return false;
+    }
+
+    return this.nextStartAt > this.context.currentTime + 0.05;
+  }
+
   private ensureContext() {
     if (!this.context) {
       this.context = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE });
