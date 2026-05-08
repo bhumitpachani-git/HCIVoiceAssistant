@@ -10,7 +10,7 @@ import { ActionStatus, type ActionToast, getToolLabel } from "./ActionStatus";
 const USER_SPEECH_LEVEL_THRESHOLD = 0.005;
 const TOAST_LIFETIME_MS = 6000;
 const SPEECH_VISUAL_LEVEL_DIVISOR = 0.07;
-const ASSISTANT_SIGNAL_STALL_MS = 5000;
+const ASSISTANT_SIGNAL_STALL_MS = 12000;
 const MAX_USER_TALK_MS = 10_000;
 const HOLD_TAIL_MS = 450;
 const SPEECH_END_GRACE_MS = 700;
@@ -737,6 +737,9 @@ export function VoiceAgent() {
           );
           break;
         case "assistant_text":
+          if (assistantSpeakingRef.current && !assistantAudioEndedRef.current) {
+            lastAssistantSignalAtRef.current = Date.now();
+          }
           setMessages((current) =>
             upsertConversationMessage(current, "assistant", event.text, event.isPartial ?? false)
           );
