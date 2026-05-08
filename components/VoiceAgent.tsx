@@ -15,6 +15,8 @@ const MAX_USER_TALK_MS = 10_000;
 const HOLD_TAIL_MS = 450;
 const SPEECH_END_GRACE_MS = 700;
 const TURN_REOPEN_COOLDOWN_MS = 700;
+const SPEECH_START_DEBOUNCE_MS = 140;
+const ASSISTANT_ECHO_COOLDOWN_MS = 1_200;
 const PREROLL_CHUNK_COUNT = 4;
 
 type ExperienceTone =
@@ -197,6 +199,7 @@ export function VoiceAgent() {
   const manuallyStoppedRef = useRef(false);
   const speechDetectedRef = useRef(false);
   const speakingDecayTimerRef = useRef<number | undefined>(undefined);
+  const speechCandidateStartedAtRef = useRef(0);
   const connectedRef = useRef(false);
   const conversationEnabledRef = useRef(false);
   const isHoldingRef = useRef(false);
@@ -217,6 +220,7 @@ export function VoiceAgent() {
   const holdTailUntilRef = useRef(0);
   const noiseFloorRef = useRef(0.006);
   const lastAudioEndAtRef = useRef(0);
+  const lastAssistantEndedAtRef = useRef(0);
   const prerollChunksRef = useRef<string[]>([]);
   const shouldFlushPrerollRef = useRef(false);
   const titleClickStateRef = useRef({ count: 0, lastAt: 0 });
@@ -247,6 +251,9 @@ export function VoiceAgent() {
 
   const setRecordingState = useCallback((next: boolean) => {
     isHoldingRef.current = next;
+    if (!next) {
+      speechCandidateStartedAtRef.current = 0;
+    }
     setIsHolding(next);
   }, []);
 
@@ -381,6 +388,8 @@ export function VoiceAgent() {
     closingAudioTurnRef.current = false;
     holdTailUntilRef.current = 0;
     lastAudioEndAtRef.current = 0;
+    lastAssistantEndedAtRef.current = 0;
+    speechCandidateStartedAtRef.current = 0;
     prerollChunksRef.current = [];
     shouldFlushPrerollRef.current = false;
     if (speakingDecayTimerRef.current) {
@@ -474,6 +483,7 @@ export function VoiceAgent() {
 
   const settleAssistantTurn = useCallback(() => {
     clearAssistantPlaybackState();
+    lastAssistantEndedAtRef.current = Date.now();
 
     if (awaitingGreetingRef.current) {
       activateConversationMode();
@@ -511,9 +521,15 @@ export function VoiceAgent() {
         return;
       }
 
+      if (!isHoldingRef.current && Date.now() - lastAssistantEndedAtRef.current < ASSISTANT_ECHO_COOLDOWN_MS) {
+        speechCandidateStartedAtRef.current = 0;
+        return;
+      }
+
       // Only evaluate mic speech when we expect the user to speak.
       // This prevents false "user input" events while the assistant is processing.
       if (assistantSpeakingRef.current) {
+        speechCandidateStartedAtRef.current = 0;
         return;
       }
 
@@ -543,12 +559,22 @@ export function VoiceAgent() {
         }
 
         if (!isHoldingRef.current) {
+          if (!speechCandidateStartedAtRef.current) {
+            speechCandidateStartedAtRef.current = Date.now();
+            return;
+          }
+
+          if (Date.now() - speechCandidateStartedAtRef.current < SPEECH_START_DEBOUNCE_MS) {
+            return;
+          }
+
           if (Date.now() - lastAudioEndAtRef.current < TURN_REOPEN_COOLDOWN_MS) {
             return;
           }
 
           setRecordingState(true);
           holdTailUntilRef.current = Date.now() + HOLD_TAIL_MS;
+          speechCandidateStartedAtRef.current = 0;
           // Open a fresh user audio turn for Gemini when speech begins.
           if (socketRef.current?.isOpen && !audioStreamOpenRef.current) {
             socketRef.current.send({ type: "audio_start" });
@@ -563,6 +589,8 @@ export function VoiceAgent() {
 
         return;
       }
+
+      speechCandidateStartedAtRef.current = 0;
 
       if (!isHoldingRef.current || speakingDecayTimerRef.current) {
         return;
@@ -583,6 +611,10 @@ export function VoiceAgent() {
   const handleMicChunk = useCallback(
     (data: string) => {
       if (!conversationEnabledRef.current) {
+        return;
+      }
+
+      if (!isHoldingRef.current && Date.now() - lastAssistantEndedAtRef.current < ASSISTANT_ECHO_COOLDOWN_MS) {
         return;
       }
 
@@ -762,6 +794,7 @@ export function VoiceAgent() {
           assistantAudioEndedRef.current = true;
           if (event.reason !== "completed") {
             playerRef.current.interrupt();
+            lastAssistantEndedAtRef.current = Date.now();
             if (event.reason !== "session_closed") {
               settleAssistantTurn();
             } else {
