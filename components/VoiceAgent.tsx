@@ -16,8 +16,8 @@ const HOLD_TAIL_MS = 450;
 const SPEECH_END_GRACE_MS = 700;
 const TURN_REOPEN_COOLDOWN_MS = 700;
 const SPEECH_START_DEBOUNCE_MS = 140;
-const ASSISTANT_ECHO_COOLDOWN_MS = 1_200;
-const PREROLL_CHUNK_COUNT = 4;
+const ASSISTANT_ECHO_COOLDOWN_MS = 350;
+const PREROLL_CHUNK_COUNT = 10;
 
 type ExperienceTone =
   | "idle"
@@ -610,6 +610,9 @@ export function VoiceAgent() {
 
   const handleMicChunk = useCallback(
     (data: string) => {
+      const priorPreroll = prerollChunksRef.current;
+      prerollChunksRef.current = [...priorPreroll, data].slice(-PREROLL_CHUNK_COUNT);
+
       if (!conversationEnabledRef.current) {
         return;
       }
@@ -632,9 +635,6 @@ export function VoiceAgent() {
       if (assistantSpeakingRef.current) {
         return;
       }
-
-      const priorPreroll = prerollChunksRef.current;
-      prerollChunksRef.current = [...priorPreroll, data].slice(-PREROLL_CHUNK_COUNT);
 
       // Only stream audio while we are actively holding a user turn.
       // This prevents continuous background-noise streaming that causes delays/ignored turns.
