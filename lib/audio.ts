@@ -253,6 +253,7 @@ export class PcmPlayer {
   private idleTimer?: number;
   private onIdle?: () => void;
   private activeSources = new Set<AudioBufferSourceNode>();
+  private pendingEnqueues = 0;
 
   setOnIdle(onIdle?: () => void) {
     this.onIdle = onIdle;
@@ -266,31 +267,37 @@ export class PcmPlayer {
   }
 
   async playBase64Pcm(base64Pcm24k: string) {
-    const context = this.ensureContext();
-    await this.resume();
+    this.pendingEnqueues += 1;
 
-    const buffer = base64ToArrayBuffer(base64Pcm24k);
-    const pcm = new Int16Array(buffer);
-    const audioBuffer = context.createBuffer(1, pcm.length, OUTPUT_SAMPLE_RATE);
-    const channel = audioBuffer.getChannelData(0);
+    try {
+      const context = this.ensureContext();
+      await this.resume();
 
-    for (let i = 0; i < pcm.length; i += 1) {
-      channel[i] = pcm[i] / 0x8000;
+      const buffer = base64ToArrayBuffer(base64Pcm24k);
+      const pcm = new Int16Array(buffer);
+      const audioBuffer = context.createBuffer(1, pcm.length, OUTPUT_SAMPLE_RATE);
+      const channel = audioBuffer.getChannelData(0);
+
+      for (let i = 0; i < pcm.length; i += 1) {
+        channel[i] = pcm[i] / 0x8000;
+      }
+
+      const source = context.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(context.destination);
+      this.activeSources.add(source);
+      source.onended = () => {
+        this.activeSources.delete(source);
+        source.disconnect();
+      };
+
+      const startAt = Math.max(context.currentTime + 0.02, this.nextStartAt);
+      source.start(startAt);
+      this.nextStartAt = startAt + audioBuffer.duration;
+      this.scheduleIdleCallback(context);
+    } finally {
+      this.pendingEnqueues = Math.max(0, this.pendingEnqueues - 1);
     }
-
-    const source = context.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(context.destination);
-    this.activeSources.add(source);
-    source.onended = () => {
-      this.activeSources.delete(source);
-      source.disconnect();
-    };
-
-    const startAt = Math.max(context.currentTime + 0.02, this.nextStartAt);
-    source.start(startAt);
-    this.nextStartAt = startAt + audioBuffer.duration;
-    this.scheduleIdleCallback(context);
   }
 
   interrupt() {
@@ -300,6 +307,7 @@ export class PcmPlayer {
     }
 
     this.nextStartAt = 0;
+    this.pendingEnqueues = 0;
 
     for (const source of this.activeSources) {
       try {
@@ -323,6 +331,10 @@ export class PcmPlayer {
   }
 
   hasPendingPlayback() {
+    if (this.pendingEnqueues > 0) {
+      return true;
+    }
+
     if (this.activeSources.size > 0) {
       return true;
     }
