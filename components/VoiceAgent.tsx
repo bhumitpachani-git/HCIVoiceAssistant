@@ -15,8 +15,12 @@ const MAX_USER_TALK_MS = 10_000;
 const HOLD_TAIL_MS = 450;
 const SPEECH_END_GRACE_MS = 700;
 const TURN_REOPEN_COOLDOWN_MS = 700;
-const SPEECH_START_DEBOUNCE_MS = 90;
-const ASSISTANT_ECHO_COOLDOWN_MS = 120;
+const SPEECH_START_DEBOUNCE_MS = 110;
+const ASSISTANT_ECHO_COOLDOWN_MS = 220;
+const ASSISTANT_BARGE_IN_START_THRESHOLD = 0.016;
+const ASSISTANT_BARGE_IN_INSTANT_THRESHOLD = 0.024;
+const ASSISTANT_BARGE_IN_DEBOUNCE_MS = 260;
+const ASSISTANT_BARGE_IN_MIN_PLAYBACK_MS = 450;
 const PREROLL_CHUNK_COUNT = 10;
 
 type ExperienceTone =
@@ -543,11 +547,22 @@ export function VoiceAgent() {
         assistantSpeakingRef.current ||
         statusRef.current === "speaking" ||
         playerRef.current.hasPendingPlayback();
+      const assistantPlaybackStartedAt = assistantSpeechStartedAtRef.current;
 
       if (
         !isHoldingRef.current &&
         !assistantPlaybackActive &&
         Date.now() - lastAssistantEndedAtRef.current < ASSISTANT_ECHO_COOLDOWN_MS
+      ) {
+        speechCandidateStartedAtRef.current = 0;
+        return;
+      }
+
+      if (
+        !isHoldingRef.current &&
+        assistantPlaybackActive &&
+        assistantPlaybackStartedAt &&
+        Date.now() - assistantPlaybackStartedAt < ASSISTANT_BARGE_IN_MIN_PLAYBACK_MS
       ) {
         speechCandidateStartedAtRef.current = 0;
         return;
@@ -571,11 +586,11 @@ export function VoiceAgent() {
 
       const baseStartThreshold = Math.max(USER_SPEECH_LEVEL_THRESHOLD, noiseFloorRef.current * 1.7);
       const startThreshold = assistantPlaybackActive
-        ? Math.max(baseStartThreshold * 1.75, USER_SPEECH_LEVEL_THRESHOLD * 1.9)
+        ? Math.max(baseStartThreshold * 2.6, ASSISTANT_BARGE_IN_START_THRESHOLD)
         : baseStartThreshold;
       const endThreshold = Math.max(USER_SPEECH_LEVEL_THRESHOLD * 0.55, noiseFloorRef.current * 1.2);
       const instantStartThreshold = assistantPlaybackActive
-        ? Math.max(startThreshold * 1.15, USER_SPEECH_LEVEL_THRESHOLD * 2.3)
+        ? Math.max(startThreshold * 1.3, ASSISTANT_BARGE_IN_INSTANT_THRESHOLD)
         : Math.max(startThreshold * 1.35, USER_SPEECH_LEVEL_THRESHOLD * 1.8);
 
       if (level >= startThreshold || (isHoldingRef.current && level >= endThreshold)) {
@@ -592,7 +607,7 @@ export function VoiceAgent() {
             }
           }
 
-          const debounceMs = assistantPlaybackActive ? Math.max(70, SPEECH_START_DEBOUNCE_MS - 20) : SPEECH_START_DEBOUNCE_MS;
+          const debounceMs = assistantPlaybackActive ? ASSISTANT_BARGE_IN_DEBOUNCE_MS : SPEECH_START_DEBOUNCE_MS;
           if (level < instantStartThreshold && Date.now() - speechCandidateStartedAtRef.current < debounceMs) {
             return;
           }
