@@ -532,17 +532,23 @@ export function VoiceAgent() {
 
       if (
         statusRef.current !== "listening" &&
-        statusRef.current !== "done" &&
-        statusRef.current !== "speaking"
+        statusRef.current !== "done"
       ) {
         return;
       }
 
       const assistantPlaybackActive =
         assistantSpeakingRef.current ||
-        statusRef.current === "speaking" ||
         playerRef.current.hasPendingPlayback();
       const assistantPlaybackStartedAt = assistantSpeechStartedAtRef.current;
+
+      // Demo-safe behavior: do not open a new user turn while HCI is still
+      // speaking. This prevents speaker echo from cutting the assistant off
+      // mid-sentence on production demo machines.
+      if (assistantPlaybackActive) {
+        speechCandidateStartedAtRef.current = 0;
+        return;
+      }
 
       if (
         !isHoldingRef.current &&
@@ -661,8 +667,15 @@ export function VoiceAgent() {
       }
 
       if (
+        assistantSpeakingRef.current ||
+        statusRef.current === "speaking" ||
+        playerRef.current.hasPendingPlayback()
+      ) {
+        return;
+      }
+
+      if (
         !isHoldingRef.current &&
-        statusRef.current !== "speaking" &&
         Date.now() - lastAssistantEndedAtRef.current < ASSISTANT_ECHO_COOLDOWN_MS
       ) {
         return;
@@ -670,8 +683,7 @@ export function VoiceAgent() {
 
       if (
         statusRef.current !== "listening" &&
-        statusRef.current !== "done" &&
-        statusRef.current !== "speaking"
+        statusRef.current !== "done"
       ) {
         return;
       }
