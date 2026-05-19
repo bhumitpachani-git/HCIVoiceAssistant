@@ -465,14 +465,9 @@ export function VoiceAgent() {
       return;
     }
 
-    assistantAudioEndedRef.current = true;
-    playerRef.current.interrupt();
-    clearAssistantPlaybackState();
-    lastAssistantEndedAtRef.current = Date.now();
-    setStatus((current) =>
-      current === "error" || current === "disconnected" || current === "stopped" ? current : "listening"
-    );
-  }, [clearAssistantPlaybackState]);
+    // Let the backend confirm that a real user interruption happened before
+    // stopping local playback. This avoids cutting HCI off on small echo spikes.
+  }, []);
 
   const acceptServerEvent = useCallback((event: ServerEvent) => {
     if (event.sessionId) {
