@@ -7,7 +7,7 @@ import { AgentSocket, clearStoredWsUrl, getStoredWsUrl, resolveWsUrl, setStoredW
 import type { AgentStatus, ConversationMessage, CurrentAction, ServerEvent } from "@/lib/types";
 import { ActionStatus, type ActionToast, getToolLabel } from "./ActionStatus";
 
-const USER_SPEECH_LEVEL_THRESHOLD = 0.005;
+const USER_SPEECH_LEVEL_THRESHOLD = 0.004;
 const TOAST_LIFETIME_MS = 6000;
 const SPEECH_VISUAL_LEVEL_DIVISOR = 0.07;
 const ASSISTANT_SIGNAL_STALL_MS = 12000;
@@ -15,8 +15,8 @@ const MAX_USER_TALK_MS = 10_000;
 const HOLD_TAIL_MS = 450;
 const SPEECH_END_GRACE_MS = 700;
 const TURN_REOPEN_COOLDOWN_MS = 700;
-const SPEECH_START_DEBOUNCE_MS = 140;
-const ASSISTANT_ECHO_COOLDOWN_MS = 350;
+const SPEECH_START_DEBOUNCE_MS = 90;
+const ASSISTANT_ECHO_COOLDOWN_MS = 120;
 const PREROLL_CHUNK_COUNT = 10;
 
 type ExperienceTone =
@@ -456,6 +456,20 @@ export function VoiceAgent() {
     lastAssistantSignalAtRef.current = 0;
   }, [setAssistantSpeakingState]);
 
+  const interruptAssistantForUserSpeech = useCallback(() => {
+    if (!assistantSpeakingRef.current && !playerRef.current.hasPendingPlayback()) {
+      return;
+    }
+
+    assistantAudioEndedRef.current = true;
+    playerRef.current.interrupt();
+    clearAssistantPlaybackState();
+    lastAssistantEndedAtRef.current = Date.now();
+    setStatus((current) =>
+      current === "error" || current === "disconnected" || current === "stopped" ? current : "listening"
+    );
+  }, [clearAssistantPlaybackState]);
+
   const acceptServerEvent = useCallback((event: ServerEvent) => {
     if (event.sessionId) {
       if (!serverSessionIdRef.current) {
@@ -517,18 +531,24 @@ export function VoiceAgent() {
         return;
       }
 
-      if (statusRef.current !== "listening" && statusRef.current !== "done") {
+      if (
+        statusRef.current !== "listening" &&
+        statusRef.current !== "done" &&
+        statusRef.current !== "speaking"
+      ) {
         return;
       }
 
-      if (!isHoldingRef.current && Date.now() - lastAssistantEndedAtRef.current < ASSISTANT_ECHO_COOLDOWN_MS) {
-        speechCandidateStartedAtRef.current = 0;
-        return;
-      }
+      const assistantPlaybackActive =
+        assistantSpeakingRef.current ||
+        statusRef.current === "speaking" ||
+        playerRef.current.hasPendingPlayback();
 
-      // Only evaluate mic speech when we expect the user to speak.
-      // This prevents false "user input" events while the assistant is processing.
-      if (assistantSpeakingRef.current) {
+      if (
+        !isHoldingRef.current &&
+        !assistantPlaybackActive &&
+        Date.now() - lastAssistantEndedAtRef.current < ASSISTANT_ECHO_COOLDOWN_MS
+      ) {
         speechCandidateStartedAtRef.current = 0;
         return;
       }
@@ -549,8 +569,14 @@ export function VoiceAgent() {
         noiseFloorRef.current = Math.max(0.001, Math.min(0.03, next));
       }
 
-      const startThreshold = Math.max(USER_SPEECH_LEVEL_THRESHOLD, noiseFloorRef.current * 2);
-      const endThreshold = Math.max(USER_SPEECH_LEVEL_THRESHOLD * 0.6, noiseFloorRef.current * 1.35);
+      const baseStartThreshold = Math.max(USER_SPEECH_LEVEL_THRESHOLD, noiseFloorRef.current * 1.7);
+      const startThreshold = assistantPlaybackActive
+        ? Math.max(baseStartThreshold * 1.75, USER_SPEECH_LEVEL_THRESHOLD * 1.9)
+        : baseStartThreshold;
+      const endThreshold = Math.max(USER_SPEECH_LEVEL_THRESHOLD * 0.55, noiseFloorRef.current * 1.2);
+      const instantStartThreshold = assistantPlaybackActive
+        ? Math.max(startThreshold * 1.15, USER_SPEECH_LEVEL_THRESHOLD * 2.3)
+        : Math.max(startThreshold * 1.35, USER_SPEECH_LEVEL_THRESHOLD * 1.8);
 
       if (level >= startThreshold || (isHoldingRef.current && level >= endThreshold)) {
         if (speakingDecayTimerRef.current) {
@@ -561,15 +587,22 @@ export function VoiceAgent() {
         if (!isHoldingRef.current) {
           if (!speechCandidateStartedAtRef.current) {
             speechCandidateStartedAtRef.current = Date.now();
+            if (level < instantStartThreshold) {
+              return;
+            }
+          }
+
+          const debounceMs = assistantPlaybackActive ? Math.max(70, SPEECH_START_DEBOUNCE_MS - 20) : SPEECH_START_DEBOUNCE_MS;
+          if (level < instantStartThreshold && Date.now() - speechCandidateStartedAtRef.current < debounceMs) {
             return;
           }
 
-          if (Date.now() - speechCandidateStartedAtRef.current < SPEECH_START_DEBOUNCE_MS) {
+          if (!assistantPlaybackActive && Date.now() - lastAudioEndAtRef.current < TURN_REOPEN_COOLDOWN_MS) {
             return;
           }
 
-          if (Date.now() - lastAudioEndAtRef.current < TURN_REOPEN_COOLDOWN_MS) {
-            return;
+          if (assistantPlaybackActive) {
+            interruptAssistantForUserSpeech();
           }
 
           setRecordingState(true);
@@ -605,7 +638,7 @@ export function VoiceAgent() {
         void closeUserAudioTurn();
       }, SPEECH_END_GRACE_MS);
     },
-    [closeUserAudioTurn, pushVisualLevel, setRecordingState]
+    [closeUserAudioTurn, interruptAssistantForUserSpeech, pushVisualLevel, setRecordingState]
   );
 
   const handleMicChunk = useCallback(
@@ -617,22 +650,24 @@ export function VoiceAgent() {
         return;
       }
 
-      if (!isHoldingRef.current && Date.now() - lastAssistantEndedAtRef.current < ASSISTANT_ECHO_COOLDOWN_MS) {
+      if (
+        !isHoldingRef.current &&
+        statusRef.current !== "speaking" &&
+        Date.now() - lastAssistantEndedAtRef.current < ASSISTANT_ECHO_COOLDOWN_MS
+      ) {
         return;
       }
 
-      if (statusRef.current !== "listening" && statusRef.current !== "done") {
+      if (
+        statusRef.current !== "listening" &&
+        statusRef.current !== "done" &&
+        statusRef.current !== "speaking"
+      ) {
         return;
       }
 
       const socket = socketRef.current;
       if (!socket?.isOpen) {
-        return;
-      }
-
-      // Only stream mic audio during the user-listening phase.
-      // This reduces Gemini "interrupted" behavior that can cut off speech / cancel tool calls.
-      if (assistantSpeakingRef.current) {
         return;
       }
 
