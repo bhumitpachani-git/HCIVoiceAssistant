@@ -113,23 +113,23 @@ button {
   align-items: center;
   justify-content: center;
   border: 0;
-  padding: 6px 16px 10px;
+  padding: 8px 20px 12px;
   background: transparent;
   appearance: none;
   font: inherit;
-  font-family: "Segoe UI Variable Display", "Bahnschrift SemiBold", "Aptos Display", sans-serif;
-  font-size: clamp(1.45rem, min(3.7vw, 4.6svh), 3rem);
+  font-family: "Aptos Display", "Segoe UI Variable Display", "Bahnschrift SemiBold", sans-serif;
+  font-size: clamp(1.55rem, min(3.9vw, 4.8svh), 3.15rem);
   font-weight: 700;
-  letter-spacing: clamp(0.08em, 0.22vw, 0.16em);
+  letter-spacing: clamp(0.06em, 0.18vw, 0.12em);
   text-align: center;
-  background: linear-gradient(180deg, #f5fbff 0%, #8fd9ff 52%, #4ed6c2 100%);
+  background: linear-gradient(180deg, #f8fcff 0%, #b9e6ff 45%, #67d8de 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  text-shadow: 0 10px 34px rgba(78, 214, 194, 0.12);
+  text-shadow: 0 12px 34px rgba(78, 214, 194, 0.16);
   position: relative;
   cursor: pointer !important;
-  border-radius: 20px;
+  border-radius: 24px;
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
@@ -380,7 +380,7 @@ button {
   display: grid;
   justify-items: center;
   gap: 0;
-  width: min(100%, 34rem);
+  width: min(100%, 43rem);
 }
 
 .orb-stage {
@@ -388,10 +388,10 @@ button {
   position: relative;
   display: grid;
   place-items: center;
-  width: min(78vw, 60svh, 36rem);
-  min-width: 15.5rem;
+  width: min(88vw, 72svh, 46rem);
+  min-width: 19rem;
   aspect-ratio: 1;
-  filter: drop-shadow(0 24px 40px rgba(0, 0, 0, 0.28));
+  filter: drop-shadow(0 34px 56px rgba(0, 0, 0, 0.34));
 }
 
 .orb-halo,
@@ -425,9 +425,9 @@ button {
 .orb-core {
   position: relative;
   z-index: 2;
-  width: 86%;
-  height: 86%;
-  padding: clamp(0.9rem, 2.1vh, 1.25rem);
+  width: 88%;
+  height: 88%;
+  padding: clamp(1.1rem, 2.4vh, 1.6rem);
   background:
     linear-gradient(160deg, rgba(24, 52, 94, 0.95), rgba(9, 21, 40, 0.98)),
     radial-gradient(circle at 30% 18%, rgba(109, 196, 255, 0.18), transparent 38%),
@@ -469,7 +469,7 @@ button {
   display: grid;
   place-items: center;
   text-align: center;
-  padding: clamp(18px, 3vh, 24px);
+  padding: clamp(22px, 3.6vh, 34px);
   background:
     radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 48%),
     linear-gradient(180deg, rgba(14, 31, 55, 0.96), rgba(7, 18, 34, 0.96));
@@ -478,21 +478,26 @@ button {
 
 .orb-start-button {
   display: inline-grid;
+  grid-template-rows: auto auto;
+  align-content: center;
   place-items: center;
-  gap: clamp(8px, 1.2vh, 10px);
-  width: min(22rem, 72%);
-  height: auto;
+  gap: clamp(12px, 1.8vh, 16px);
+  width: clamp(12.8rem, 46%, 15.8rem);
+  aspect-ratio: 1 / 1;
+  min-height: 0;
   border: 0;
-  border-radius: 999px;
-  padding: clamp(12px, 2.0vh, 18px);
+  border-radius: 50%;
+  padding: clamp(18px, 2.8vh, 24px);
   background:
-    radial-gradient(circle at 30% 18%, rgba(165, 251, 238, 0.4), transparent 30%),
-    radial-gradient(circle at 70% 78%, rgba(77, 150, 255, 0.26), transparent 34%),
-    linear-gradient(180deg, #2fbab2 0%, #1b8f95 46%, #0f6d8b 100%);
+    radial-gradient(circle at 30% 18%, rgba(198, 255, 247, 0.42), transparent 30%),
+    radial-gradient(circle at 72% 84%, rgba(96, 167, 255, 0.24), transparent 34%),
+    linear-gradient(180deg, #3ac8bd 0%, #229e9f 46%, #13718e 100%);
   color: #f6fffe;
+  border: 1px solid rgba(228, 255, 255, 0.12);
   box-shadow:
-    0 20px 42px rgba(17, 96, 112, 0.42),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    0 28px 54px rgba(17, 96, 112, 0.44),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -18px 28px rgba(4, 31, 47, 0.18);
   cursor: pointer;
   overflow: hidden;
   transition:
@@ -505,10 +510,11 @@ button {
 }
 
 .orb-start-button:hover:not(:disabled) {
-  transform: translateY(-3px) scale(1.015);
+  transform: translateY(-3px) scale(1.018);
   box-shadow:
-    0 24px 48px rgba(17, 96, 112, 0.46),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+    0 34px 62px rgba(17, 96, 112, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -18px 28px rgba(4, 31, 47, 0.22);
 }
 
 .orb-start-button:not(:disabled) {
@@ -543,14 +549,21 @@ button {
 
 .orb-start-button span {
   max-width: none;
-  font-size: clamp(1.2rem, 2.9vh, 1.45rem);
-  font-weight: 700;
-  line-height: 1.35;
-  letter-spacing: 0.02em;
+  line-height: 1.06;
 }
 
 .orb-start-label {
-  white-space: nowrap;
+  display: inline-block;
+  max-width: 7ch;
+  white-space: normal;
+  text-wrap: balance;
+  font-family: "Aptos Display", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  font-size: clamp(1.28rem, 3.1vh, 1.64rem);
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  text-shadow: 0 2px 10px rgba(4, 38, 56, 0.16);
+  font-feature-settings: "kern" 1;
+  -webkit-font-smoothing: antialiased;
 }
 
 .orb-start-subtitle {
@@ -565,7 +578,11 @@ button {
 }
 
 .orb-start-button svg {
-  transform: translateY(-2px);
+  width: 38px;
+  height: 38px;
+  transform: translateY(1px);
+  opacity: 0.98;
+  filter: drop-shadow(0 3px 10px rgba(5, 56, 74, 0.2));
 }
 
 .thinking-dots {
@@ -624,7 +641,7 @@ button {
   display: grid;
   justify-items: center;
   gap: clamp(8px, 1.3vh, 12px);
-  width: min(13rem, 100%);
+  width: min(15rem, 100%);
 }
 
 .orb-title {
@@ -1263,13 +1280,21 @@ button {
   }
 
   .minimal-title-button {
-    font-size: clamp(1.2rem, 7vw, 1.95rem);
-    letter-spacing: 0.08em;
+    font-size: clamp(1.24rem, 7vw, 2.02rem);
+    letter-spacing: 0.07em;
   }
 
   .orb-stage {
-    width: min(92vw, 48svh, 26rem);
+    width: min(96vw, 56svh, 32rem);
     min-width: 0;
+  }
+
+  .orb-start-button {
+    width: clamp(11.2rem, 50%, 13.5rem);
+  }
+
+  .orb-start-label {
+    font-size: clamp(1.12rem, 4.8vw, 1.4rem);
   }
 
   .orb-title {
@@ -1287,7 +1312,11 @@ button {
 
 @media (max-height: 900px) {
   .orb-stage {
-    width: min(68vw, 52svh, 28rem);
+    width: min(78vw, 64svh, 36rem);
+  }
+
+  .orb-start-button {
+    width: clamp(11.8rem, 44%, 14.4rem);
   }
 
   .orb-title {
@@ -1310,7 +1339,7 @@ button {
   }
 
   .minimal-title-button {
-    font-size: clamp(1.15rem, min(3vw, 4vh), 2.1rem);
+    font-size: clamp(1.18rem, min(3.2vw, 4.2vh), 2.18rem);
   }
 
   .minimal-title-button::after {
@@ -1318,8 +1347,12 @@ button {
   }
 
   .orb-stage {
-    width: min(58vw, 46svh, 23rem);
-    min-width: 13.5rem;
+    width: min(70vw, 56svh, 29rem);
+    min-width: 14rem;
+  }
+
+  .orb-start-button {
+    width: clamp(10.6rem, 42%, 12.8rem);
   }
 
   .orb-center {
